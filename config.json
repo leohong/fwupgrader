@@ -1,0 +1,16 @@
+{
+	"Calibre":
+	[
+        "1",
+		"115200",
+		"set fwupgrade 1\r\n",
+		"sys read_revision\r\n"
+	],
+	"OPTOMA":
+	[
+        "2",
+		"9600",
+		"~00997 1\r\n",
+		"~00122 1\r\n"
+	]
+}

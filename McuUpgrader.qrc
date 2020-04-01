@@ -1,0 +1,12 @@
+<RCC>
+    <qresource prefix="/">
+        <file>images/application-exit.png</file>
+        <file>images/Upgrade.png</file>
+        <file>images/dialog-error-128.png</file>
+        <file>images/document-save-128.png</file>
+        <file>images/edit-clear-128.png</file>
+        <file>images/folder-saved-search-128.png</file>
+        <file>images/preferences-system-128.png</file>
+        <file>images/system-search-128.png</file>
+    </qresource>
+</RCC>

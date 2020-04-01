@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="windowModality">
+   <enum>Qt::NonModal</enum>
+  </property>
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>520</width>
+    <height>140</height>
+   </rect>
+  </property>
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+    <horstretch>0</horstretch>
+    <verstretch>0</verstretch>
+   </sizepolicy>
+  </property>
+  <property name="font">
+   <font>
+    <family>Calibri</family>
+    <pointsize>12</pointsize>
+   </font>
+  </property>
+  <property name="windowTitle">
+   <string>AIO Firmware Upgrader</string>
+  </property>
+  <property name="windowIcon">
+   <iconset resource="McuUpgrader.qrc">
+    <normaloff>:/images/Upgrade.png</normaloff>:/images/Upgrade.png</iconset>
+  </property>
+  <widget class="QWidget" name="centralWidget">
+   <widget class="QProgressBar" name="progressBar">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>10</y>
+      <width>500</width>
+      <height>40</height>
+     </rect>
+    </property>
+    <property name="sizePolicy">
+     <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+      <horstretch>0</horstretch>
+      <verstretch>0</verstretch>
+     </sizepolicy>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>16</pointsize>
+      <weight>75</weight>
+      <bold>true</bold>
+     </font>
+    </property>
+    <property name="tabletTracking">
+     <bool>false</bool>
+    </property>
+    <property name="value">
+     <number>0</number>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
+    <property name="textVisible">
+     <bool>true</bool>
+    </property>
+    <property name="orientation">
+     <enum>Qt::Horizontal</enum>
+    </property>
+    <property name="invertedAppearance">
+     <bool>false</bool>
+    </property>
+    <property name="textDirection">
+     <enum>QProgressBar::TopToBottom</enum>
+    </property>
+    <property name="format">
+     <string>%p%</string>
+    </property>
+   </widget>
+  </widget>
+  <widget class="QToolBar" name="mainToolBar">
+   <property name="movable">
+    <bool>false</bool>
+   </property>
+   <property name="iconSize">
+    <size>
+     <width>95</width>
+     <height>48</height>
+    </size>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+   <addaction name="actionConnect"/>
+   <addaction name="actionOpenFile"/>
+   <addaction name="actionUpgrade"/>
+   <addaction name="actionVerify"/>
+   <addaction name="actionDisconnect"/>
+   <addaction name="actionClear"/>
+  </widget>
+  <widget class="QStatusBar" name="statusBar"/>
+  <action name="actionAbout">
+   <property name="text">
+    <string>&amp;About</string>
+   </property>
+   <property name="toolTip">
+    <string>About program</string>
+   </property>
+   <property name="shortcut">
+    <string>Alt+A</string>
+   </property>
+  </action>
+  <action name="actionAboutQt">
+   <property name="text">
+    <string>&amp;About Qt</string>
+   </property>
+  </action>
+  <action name="actionConnect">
+   <property name="icon">
+    <iconset resource="McuUpgrader.qrc">
+     <normaloff>:/images/preferences-system-128.png</normaloff>:/images/preferences-system-128.png</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Connect</string>
+   </property>
+   <property name="toolTip">
+    <string>Connect to serial port</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
+   </property>
+  </action>
+  <action name="actionDisconnect">
+   <property name="icon">
+    <iconset resource="McuUpgrader.qrc">
+     <normaloff>:/images/dialog-error-128.png</normaloff>:/images/dialog-error-128.png</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Disconnect</string>
+   </property>
+   <property name="toolTip">
+    <string>Disconnect from serial port</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+D</string>
+   </property>
+  </action>
+  <action name="actionClear">
+   <property name="icon">
+    <iconset resource="McuUpgrader.qrc">
+     <normaloff>:/images/edit-clear-128.png</normaloff>:/images/edit-clear-128.png</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Clear</string>
+   </property>
+   <property name="toolTip">
+    <string>Clear data</string>
+   </property>
+   <property name="shortcut">
+    <string>Alt+L</string>
+   </property>
+   <property name="visible">
+    <bool>false</bool>
+   </property>
+   <property name="iconVisibleInMenu">
+    <bool>true</bool>
+   </property>
+  </action>
+  <action name="actionQuit">
+   <property name="icon">
+    <iconset resource="McuUpgrader.qrc">
+     <normaloff>:/images/application-exit.png</normaloff>:/images/application-exit.png</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Quit</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Q</string>
+   </property>
+  </action>
+  <action name="actionOpenFile">
+   <property name="icon">
+    <iconset resource="McuUpgrader.qrc">
+     <normaloff>:/images/folder-saved-search-128.png</normaloff>:/images/folder-saved-search-128.png</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;OpenFile</string>
+   </property>
+   <property name="toolTip">
+    <string>Open Files</string>
+   </property>
+  </action>
+  <action name="actionUpgrade">
+   <property name="icon">
+    <iconset resource="McuUpgrader.qrc">
+     <normaloff>:/images/document-save-128.png</normaloff>:/images/document-save-128.png</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Upgrade</string>
+   </property>
+   <property name="toolTip">
+    <string>Upgrade</string>
+   </property>
+  </action>
+  <action name="actionVerify">
+   <property name="icon">
+    <iconset resource="McuUpgrader.qrc">
+     <normaloff>:/images/system-search-128.png</normaloff>:/images/system-search-128.png</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Verify</string>
+   </property>
+   <property name="toolTip">
+    <string>Check Version</string>
+   </property>
+  </action>
+ </widget>
+ <layoutdefault spacing="6" margin="11"/>
+ <resources>
+  <include location="McuUpgrader.qrc"/>
+ </resources>
+ <connections/>
+</ui>
