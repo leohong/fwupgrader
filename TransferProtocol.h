@@ -13,7 +13,7 @@
 
 #define MAX_MSG_PKT     (10)
 #define MSG_RETRY       (5)
-#define MAX_PACKET_SIZE (sizeof(sPAYLOAD)/sizeof(BYTE))
+#define MAX_PACKET_SIZE (sizeof(TransferProtocol::sPAYLOAD)/sizeof(BYTE))
 #define eCMD_MODULE_IAP (10)
 
 #define HEADERSIZE      (sizeof(TransferProtocol::sMSG_PACKET_HEADER)/sizeof(BYTE))
@@ -91,6 +91,7 @@ public:
         eMSG_STATE_BAD_PACKET,
         eMSG_STATE_TIMEOUT,
         eMSG_STATE_RUN_OUT_OF_MEMORY,
+        eMSG_STATE_INITIAL_ERROR,
 
         eMSG_STATE_NUMBERS,
     } eMSG_STATE;
@@ -122,7 +123,7 @@ public:
         union uFORMAT
         {
             sPAYLOAD        sPayload;
-            BYTE            acPayload[sizeof(sPAYLOAD)];
+            BYTE            acPacketPayload[sizeof(sPAYLOAD)];
         } uFormat;
     } sMSG_PACKET_FORMAT;
 
@@ -138,7 +139,7 @@ public:
 
     TransferProtocol(QObject *parent = nullptr);
     ~TransferProtocol();
-    
+
     //parserStateReset();
     //bool returnPayload(sMSG_PACKET_FORMAT *psMsg);
     void packetBuild(sMSG_PACKET_FORMAT *psPacket, eDEVICE eSource, eDEVICE eDestination, ePAYLOAD_TYPE ePayloadType, WORD wSeqId, WORD wDataSize, sPAYLOAD *psPayload);
@@ -160,15 +161,17 @@ public slots:
     bool commandRead(eIAP_CMD eCmd, QByteArray &data);
 
 private:
-    WORD                        wSeqId;
+    WORD                        m_wSeqId;
+    sMSG_STATE_DATA             m_sMsgState;
     //QMutex                      m_Mutex;
     //sMSG_STATE_DATA             m_sMsgState;
     //QQueue<sMSG_PACKET_FORMAT>  m_qMegQueue;
     //QQueue<char>                m_qRecivedQueue;
     //QThread                     *m_parserThread;
 
-    //void resetState();
+    void resetState(sMSG_STATE_DATA *psMsgData);
     void calculateCheckSum(sMSG_PACKET_FORMAT *psPacket);
+    eMSG_STATE utilHost_StateProcess(sMSG_STATE_DATA *psMsgData, DWORD dwMilliSecond);
 };
 
 #endif // TRANSFERPROTOCOL_H

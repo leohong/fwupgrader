@@ -33,6 +33,7 @@ bool SerialPort::openSerialPort(Settings &Settings)
     m_port->setParity(Settings.parity);
     m_port->setStopBits(Settings.stopBits);
     m_port->setFlowControl(Settings.flowControl);
+    m_port->setReadBufferSize(1);
 
     if(m_port->open(QIODevice::ReadWrite))
     {

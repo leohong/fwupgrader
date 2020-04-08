@@ -8,7 +8,8 @@
 
 TransferProtocol::TransferProtocol(QObject *parent) :
     QObject(parent),
-    m_serial(new SerialPort)
+    m_serial(new SerialPort),
+    m_wSeqId(0)
 {
     connect(this, &TransferProtocol::writeData, m_serial, &SerialPort::write_data);
 
@@ -34,7 +35,7 @@ void TransferProtocol::calculateCheckSum(sMSG_PACKET_FORMAT *psPacket)
 
     for(qint32 i = 0; i < psPacket->sPacketHeader.wPacketSize; i++)
     {
-        wChecksum += psPacket->uFormat.acPayload[i];
+        wChecksum += psPacket->uFormat.acPacketPayload[i];
     }
 
     psPacket->sPacketHeader.wChecksum = ((~wChecksum + 1) & 0xFFFF);
@@ -61,7 +62,7 @@ void TransferProtocol::packageAck(sMSG_PACKET_FORMAT *psPacket, eDEVICE eSource,
     psPacket->sPacketHeader.cDestination = eDestination;
     psPacket->sPacketHeader.cPacketType = ePAYLOAD_TYPE_ACK;
     psPacket->sPacketHeader.wPacketSize = 1;
-    psPacket->uFormat.acPayload[0] = eAckType;
+    psPacket->uFormat.acPacketPayload[0] = eAckType;
     calculateCheckSum(psPacket);
 
     packageSend(psPacket);
@@ -80,44 +81,54 @@ bool TransferProtocol::commandWrite(eIAP_CMD eCmd, WORD wSize, BYTE *pcData)
     quint8 retry = 5;
     sPAYLOAD sPayload;
     sMSG_PACKET_FORMAT sPackage;
-    sMSG_PACKET_FORMAT *psRetMsg;
+    qDebug() << "\ncommandWrite";
 
-    sPayload.cModule = 0;
-    sPayload.cSubCmd = eCmd;
-
-    if(0 != wSize)
+    do
     {
-        memcpy(sPayload.acData, pcData, wSize);
-    }
+        sPayload.cModule = 0;
+        sPayload.cSubCmd = eCmd;
 
-    packetBuild(&sPackage, eDEVICE_APP, eDEVICE_BOOTCODE, ePAYLOAD_TYPE_EXE_WRITE, wSeqId++, (wSize+2), &sPayload);
+        if(0 != wSize) {
+            memcpy(sPayload.acData, pcData, wSize);
+        }
 
-    m_serial->m_port->clear();
-    QByteArray PackageOut = QByteArray::fromRawData(reinterpret_cast<char *>(&sPackage), (sPackage.sPacketHeader.wPacketSize + HEADERSIZE + MAGICNUMBERSIZE));
-    writeData(PackageOut);
+        packetBuild(&sPackage, eDEVICE_APP, eDEVICE_BOOTCODE, ePAYLOAD_TYPE_EXE_WRITE, m_wSeqId, (wSize+2), &sPayload);
 
-    //Blocking read
-    if(m_serial->m_port->waitForReadyRead(5000))
-    {
-        QByteArray responseData = m_serial->m_port->readAll();
+        m_serial->m_port->clear();
+        QByteArray PackageOut = QByteArray::fromRawData(reinterpret_cast<char *>(&sPackage), (sPackage.sPacketHeader.wPacketSize + HEADERSIZE + MAGICNUMBERSIZE));
 
-        while(retry--)
-        {
-            if(m_serial->m_port->waitForReadyRead(10))
-            {
-                responseData.append(m_serial->m_port->readAll());
+        writeData(PackageOut);
+        resetState(&m_sMsgState);
+        while(eMSG_STATE_DATA_READY > m_sMsgState.eMsgParsingState) {
+            utilHost_StateProcess(&m_sMsgState, 5000);
+
+            if(eMSG_STATE_DATA_READY == m_sMsgState.eMsgParsingState) {
+                if(m_wSeqId == m_sMsgState.sMsgPacket.sPacketHeader.wSeqId) {
+                    if((ePAYLOAD_TYPE_ACK == m_sMsgState.sMsgPacket.sPacketHeader.cPacketType)
+                       && (eACK_TYPE_ACK == m_sMsgState.sMsgPacket.uFormat.acPacketPayload[0]))  {
+                        ret = true;
+                    }
+                } else {
+                    resetState(&m_sMsgState);
+                }
             }
         }
 
-        emit recived_data(responseData);
+        switch(m_sMsgState.eMsgParsingState) {
+        case eMSG_STATE_BAD_PACKET:
+        case eMSG_STATE_TIMEOUT:
+        case eMSG_STATE_RUN_OUT_OF_MEMORY:
+        case eMSG_STATE_INITIAL_ERROR:
+            //usleep(500 * 1000);
+            ret = false;
+            break;
 
-        psRetMsg = reinterpret_cast<sMSG_PACKET_FORMAT *>(responseData.data());
-
-        if((ePAYLOAD_TYPE_ACK == psRetMsg->sPacketHeader.cPacketType)&&(eACK_TYPE_ACK == psRetMsg->uFormat.acPayload[0]))
-        {
-            ret = true;
+        default:
+            break;
         }
-    }
+
+        m_wSeqId++;
+    } while((retry--) && (ret == false));
 
     return ret;
 }
@@ -128,309 +139,173 @@ bool TransferProtocol::commandRead(eIAP_CMD eCmd, QByteArray &data)
     quint8 retry = 5;
     sPAYLOAD sPayload;
     sMSG_PACKET_FORMAT sPackage;
-    sMSG_PACKET_FORMAT *psRetMsg;
+    qDebug() << "\ncommandRead";
 
-    sPayload.cModule = 0;
-    sPayload.cSubCmd = eCmd;
-
-    packetBuild(&sPackage, eDEVICE_APP, eDEVICE_BOOTCODE, ePAYLOAD_TYPE_EXE_READ, wSeqId++, 2, &sPayload);
-
-    m_serial->m_port->clear();
-    QByteArray PackageOut = QByteArray::fromRawData(reinterpret_cast<char *>(&sPackage), (sPackage.sPacketHeader.wPacketSize + HEADERSIZE + MAGICNUMBERSIZE));
-    writeData(PackageOut);
-
-    //Blocking read
-    if(m_serial->m_port->waitForReadyRead(5000))
+    do
     {
-        data = m_serial->m_port->readAll();
+        sPayload.cModule = 0;
+        sPayload.cSubCmd = eCmd;
 
-        while(retry--)
-        {
-            if(m_serial->m_port->waitForReadyRead(10))
-            {
-                data.append(m_serial->m_port->readAll());
+        packetBuild(&sPackage, eDEVICE_APP, eDEVICE_BOOTCODE, ePAYLOAD_TYPE_EXE_READ, m_wSeqId, 2, &sPayload);
+
+        m_serial->m_port->clear();
+        QByteArray PackageOut = QByteArray::fromRawData(reinterpret_cast<char *>(&sPackage), (sPackage.sPacketHeader.wPacketSize + HEADERSIZE + MAGICNUMBERSIZE));
+        writeData(PackageOut);
+        resetState(&m_sMsgState);
+
+        while(eMSG_STATE_DATA_READY > m_sMsgState.eMsgParsingState) {
+            utilHost_StateProcess(&m_sMsgState, 5000);
+
+            if(eMSG_STATE_DATA_READY == m_sMsgState.eMsgParsingState) {
+                if(m_wSeqId == m_sMsgState.sMsgPacket.sPacketHeader.wSeqId) {
+                    if(ePAYLOAD_TYPE_REPLY == m_sMsgState.sMsgPacket.sPacketHeader.cPacketType) {
+                        data = QByteArray::fromRawData(reinterpret_cast<char *>(m_sMsgState.sMsgPacket.uFormat.acPacketPayload), m_sMsgState.sMsgPacket.sPacketHeader.wPacketSize);
+                        ret = true;
+                    }
+                } else {
+                    resetState(&m_sMsgState);
+                }
             }
         }
 
-        emit recived_data(data);
+        switch(m_sMsgState.eMsgParsingState) {
+            case eMSG_STATE_TIMEOUT:
+            case eMSG_STATE_BAD_PACKET:
+            case eMSG_STATE_RUN_OUT_OF_MEMORY:
+            case eMSG_STATE_INITIAL_ERROR:
+                resetState(&m_sMsgState);
+                ret = false;
+                break;
 
-        psRetMsg = reinterpret_cast<sMSG_PACKET_FORMAT *>(data.data());
-
-        if(ePAYLOAD_TYPE_REPLY == psRetMsg->sPacketHeader.cPacketType)
-        {
-            data.remove(0, HEADERSIZE + MAGICNUMBERSIZE);
-            ret = true;
+            default:
+                break;
         }
-    }
+
+        m_wSeqId++;
+    } while((retry--) && (ret == false));
 
     return ret;
 }
 
-#if 0
-void TransferProtocol::resetState()
+void TransferProtocol::resetState(sMSG_STATE_DATA *psMsgData)
 {
-    memset(&m_sMsgState, 0x00, sizeof (sMSG_STATE_DATA));
+    memset(&psMsgData->sMsgPacket, 0, sizeof(sMSG_PACKET_FORMAT) / sizeof(BYTE));
+    psMsgData->eMsgParsingState = eMSG_STATE_MAGIC_NUMBER;
+    psMsgData->wRecivedByteCount = 0;
+    psMsgData->wRecivedByteCRC = 0;
 }
 
-void TransferProtocol::receive_data(const QByteArray &data)
+TransferProtocol::eMSG_STATE TransferProtocol::utilHost_StateProcess(sMSG_STATE_DATA *psMsgData, DWORD dwMilliSecond)
 {
-    //qDebug() << "TransferProtocol receive_data is:" << QThread::currentThreadId();
-    for (qint32 i = 0; i < data.size(); i++)
-    {
-        m_qRecivedQueue.enqueue(data.at(i));
-    }
+    unsigned char cReadBuffer = 0;
 
-    parser(data.at(0));
-}
-
-void TransferProtocol::parser(char data)
-{
-    //while(1)
+    if(m_serial->m_port->waitForReadyRead(dwMilliSecond))
     {
-        //qDebug() << "TransferProtocol parser is:" << QThread::currentThreadId();
-        while (!m_qRecivedQueue.empty())
+        m_serial->m_port->read(reinterpret_cast<char *>(&cReadBuffer), 1);
+
+        switch(psMsgData->eMsgParsingState)
         {
-            //QMutexLocker locker(&m_Mutex);
-            BYTE cReadBuffer = static_cast<BYTE>(m_qRecivedQueue.dequeue());
-            //BYTE cReadBuffer = static_cast<BYTE>(data);
-            qDebug() << cReadBuffer;
-
-            switch(m_sMsgState.eMsgParsingState)
-            {
             case eMSG_STATE_MAGIC_NUMBER:
             {
-                m_sMsgState.sMsgPacket.cMagicNumber2 = cReadBuffer;
+                psMsgData->sMsgPacket.cMagicNumber2 = cReadBuffer;
 
-                if((MAGICNUMBER1 == m_sMsgState.sMsgPacket.cMagicNumber1) && (MAGICNUMBER2 == m_sMsgState.sMsgPacket.cMagicNumber2))
+                if((MAGICNUMBER1 == psMsgData->sMsgPacket.cMagicNumber1) && (MAGICNUMBER2 == psMsgData->sMsgPacket.cMagicNumber2))
                 {
-                    m_sMsgState.eMsgParsingState = eMSG_STATE_PACKET_HEADER;
-                    m_sMsgState.wRecivedByteCount = 0;
-                    m_sMsgState.wRecivedByteCRC = 0;
+                    psMsgData->eMsgParsingState = TransferProtocol::eMSG_STATE_PACKET_HEADER;
+                    psMsgData->wRecivedByteCount = 0;
+                    psMsgData->wRecivedByteCRC = 0;
                 }
                 else
                 {
-                    m_sMsgState.sMsgPacket.cMagicNumber1 = m_sMsgState.sMsgPacket.cMagicNumber2;
+                    psMsgData->sMsgPacket.cMagicNumber1 = psMsgData->sMsgPacket.cMagicNumber2;
                 }
             }
-                break;
+            break;
 
             case eMSG_STATE_PACKET_HEADER:
             {
-                BYTE *pcBuffer = reinterpret_cast<BYTE*>(&m_sMsgState.sMsgPacket.sPacketHeader);
-                *(pcBuffer + m_sMsgState.wRecivedByteCount++) = cReadBuffer;
+                BYTE *pcBuffer = (BYTE *)&psMsgData->sMsgPacket.sPacketHeader;
+                *(pcBuffer + psMsgData->wRecivedByteCount++) = cReadBuffer;
 
-                if(HEADERSIZE == m_sMsgState.wRecivedByteCount)
+                if(HEADERSIZE == psMsgData->wRecivedByteCount)
                 {
-                    if(MAX_PACKET_SIZE >= m_sMsgState.sMsgPacket.sPacketHeader.wPacketSize)
+                    if(MAX_PACKET_SIZE >= psMsgData->sMsgPacket.sPacketHeader.wPacketSize)
                     {
-                        m_sMsgState.wRecivedByteCount = 0;
-                        m_sMsgState.eMsgParsingState = eMSG_STATE_PACKET_PAYLOAD;
+                        psMsgData->wRecivedByteCount = 0;
+                        psMsgData->eMsgParsingState = TransferProtocol::eMSG_STATE_PACKET_PAYLOAD;
 
-                        // 計算CRC
-                        m_sMsgState.wRecivedByteCRC += m_sMsgState.sMsgPacket.sPacketHeader.cSource;
-                        m_sMsgState.wRecivedByteCRC += m_sMsgState.sMsgPacket.sPacketHeader.cDestination;
-                        m_sMsgState.wRecivedByteCRC += m_sMsgState.sMsgPacket.sPacketHeader.cPacketType;
-                        m_sMsgState.wRecivedByteCRC += (m_sMsgState.sMsgPacket.sPacketHeader.wSeqId & 0xFF00) >> 8;
-                        m_sMsgState.wRecivedByteCRC += (m_sMsgState.sMsgPacket.sPacketHeader.wSeqId & 0x00FF);
-                        m_sMsgState.wRecivedByteCRC += (m_sMsgState.sMsgPacket.sPacketHeader.wPacketSize & 0xFF00) >> 8;
-                        m_sMsgState.wRecivedByteCRC += (m_sMsgState.sMsgPacket.sPacketHeader.wPacketSize & 0x00FF);
+                        psMsgData->wRecivedByteCRC = 0;
+                        psMsgData->wRecivedByteCRC += psMsgData->sMsgPacket.sPacketHeader.cSource;
+                        psMsgData->wRecivedByteCRC += psMsgData->sMsgPacket.sPacketHeader.cDestination;
+                        psMsgData->wRecivedByteCRC += psMsgData->sMsgPacket.sPacketHeader.cPacketType;
+                        psMsgData->wRecivedByteCRC += ((psMsgData->sMsgPacket.sPacketHeader.wSeqId >> 8) & 0x00FF);
+                        psMsgData->wRecivedByteCRC += (psMsgData->sMsgPacket.sPacketHeader.wSeqId & 0x00FF);
+                        psMsgData->wRecivedByteCRC += ((psMsgData->sMsgPacket.sPacketHeader.wPacketSize >> 8) & 0x00FF) ;
+                        psMsgData->wRecivedByteCRC += (psMsgData->sMsgPacket.sPacketHeader.wPacketSize & 0x00FF);
 
-                        // 不帶Payload資料,檢查CRC
-                        if(0 == m_sMsgState.sMsgPacket.sPacketHeader.wPacketSize)
+                        if(0 == psMsgData->sMsgPacket.sPacketHeader.wPacketSize)
                         {
-                            if(0 == (0xFFFF & (m_sMsgState.sMsgPacket.sPacketHeader.wChecksum + m_sMsgState.wRecivedByteCRC)))
+                            if(0 == (0xFFFF & (psMsgData->sMsgPacket.sPacketHeader.wChecksum + psMsgData->wRecivedByteCRC)))
                             {
-                                m_sMsgState.eMsgParsingState = eMSG_STATE_DATA_READY;
+                                psMsgData->eMsgParsingState = TransferProtocol::eMSG_STATE_DATA_READY;
                             }
                             else
                             {
-                                m_sMsgState.eMsgParsingState = eMSG_STATE_BAD_PACKET;
+                                qDebug() << "CRC ERROR";
+                                //utilHost_Package_Print(psMsgData);
+                                psMsgData->eMsgParsingState = TransferProtocol::eMSG_STATE_BAD_PACKET;
                             }
 
-                            goto end;
+                            return psMsgData->eMsgParsingState;
                         }
                     }
                     else
                     {
-                        m_sMsgState.eMsgParsingState = eMSG_STATE_BAD_PACKET;
-
-                        goto end;
+                        qDebug() << "OVER SIZE";
+                        psMsgData->eMsgParsingState = TransferProtocol::eMSG_STATE_BAD_PACKET;
+                        return TransferProtocol::eMSG_STATE_BAD_PACKET;
                     }
                 }
             }
-                break;
+            break;
 
             case eMSG_STATE_PACKET_PAYLOAD:
             {
-                m_sMsgState.wRecivedByteCRC += cReadBuffer;
-                m_sMsgState.sMsgPacket.uFormat.acPayload[m_sMsgState.wRecivedByteCount++] = cReadBuffer;
+                psMsgData->wRecivedByteCRC += cReadBuffer;
+                psMsgData->sMsgPacket.uFormat.acPacketPayload[psMsgData->wRecivedByteCount++] = cReadBuffer;
 
-                if(m_sMsgState.sMsgPacket.sPacketHeader.wPacketSize == m_sMsgState.wRecivedByteCount)
+                if(psMsgData->sMsgPacket.sPacketHeader.wPacketSize == psMsgData->wRecivedByteCount)
                 {
-                    if(0 == (0xFFFF & (m_sMsgState.sMsgPacket.sPacketHeader.wChecksum + m_sMsgState.wRecivedByteCRC)))
+                    if(0 == (0xFFFF & (psMsgData->sMsgPacket.sPacketHeader.wChecksum + psMsgData->wRecivedByteCRC)))
                     {
-                        m_sMsgState.eMsgParsingState = eMSG_STATE_DATA_READY;
+                        psMsgData->eMsgParsingState = TransferProtocol::eMSG_STATE_DATA_READY;
                     }
                     else
                     {
-                        m_sMsgState.eMsgParsingState = eMSG_STATE_BAD_PACKET;
+                        qDebug() << "CRC ERROR";
+                        psMsgData->eMsgParsingState = TransferProtocol::eMSG_STATE_BAD_PACKET;
                     }
 
-                    goto end;
+#if 1
+                    if(ePAYLOAD_TYPE_REPLY == psMsgData->sMsgPacket.sPacketHeader.cPacketType) {
+                        psMsgData->eMsgParsingState = TransferProtocol::eMSG_STATE_DATA_READY;
+                    }
+#endif //0
+                    return psMsgData->eMsgParsingState;
                 }
             }
-                break;
+            break;
 
             default:
-                goto end;
-            }
+                return psMsgData->eMsgParsingState;
+                //break;
         }
-
-end:
-        sMSG_PACKET_FORMAT retPackage = m_sMsgState.sMsgPacket;
-
-        switch(m_sMsgState.eMsgParsingState)
-        {
-        case eMSG_STATE_MAGIC_NUMBER:
-        case eMSG_STATE_PACKET_HEADER:
-        case eMSG_STATE_PACKET_PAYLOAD:
-            // Packet unpacking
-            break;
-
-        case eMSG_STATE_DATA_READY:
-        {
-            m_qMegQueue.enqueue(m_sMsgState.sMsgPacket);
-            emit ready();
-
-            QByteArray PackageOut = QByteArray::fromRawData(reinterpret_cast<char*>(&retPackage), (retPackage.sPacketHeader.wPacketSize + HEADERSIZE + MAGICNUMBERSIZE));
-            qDebug()    << PackageOut.toHex();
-            qDebug()    << "Source ="       << retPackage.sPacketHeader.cSource
-                        << "Destination ="  << retPackage.sPacketHeader.cDestination
-                        << "Typde ="        << retPackage.sPacketHeader.cPacketType
-                        << "SeqId ="        << retPackage.sPacketHeader.wSeqId
-                        << "Size ="         << retPackage.sPacketHeader.wPacketSize
-                        << "Module ="       << retPackage.uFormat.sPayload.cModule
-                        << "SubCmd ="       << retPackage.uFormat.sPayload.cSubCmd
-                        << "Data ="         << retPackage.uFormat.sPayload.acData[0];
-
-            if(ePAYLOAD_TYPE_EXE_WRITE == retPackage.sPacketHeader.cPacketType)
-                packageAck(&retPackage, static_cast<eDEVICE>(retPackage.sPacketHeader.cDestination), static_cast<eDEVICE>(retPackage.sPacketHeader.cSource), eACK_TYPE_ACK);
-
-            // Restart parsing process
-            resetState();
-        }
-            break;
-
-        case eMSG_STATE_BAD_PACKET:
-            // Build Ack and push in output ring buffer
-            qDebug() << "BAD_PACKET";
-            packageAck(&retPackage, static_cast<eDEVICE>(m_sMsgState.sMsgPacket.sPacketHeader.cDestination), static_cast<eDEVICE>(retPackage.sPacketHeader.cSource), eACK_TYPE_BADPACKET);
-            resetState();
-            break;
-
-        case eMSG_STATE_TIMEOUT:
-            // Build Ack and push in output ring buffer
-            qDebug() << "TIMEOUT";
-            packageAck(&retPackage, static_cast<eDEVICE>(retPackage.sPacketHeader.cDestination), static_cast<eDEVICE>(retPackage.sPacketHeader.cSource), eACK_TYPE_TIMEOUT);
-            resetState();
-            break;
-
-        case eMSG_STATE_RUN_OUT_OF_MEMORY:
-            // Build Ack and push in output ring buffer
-            qDebug() << "RUN_OUT_OF_MEMORY";
-            packageAck(&retPackage, static_cast<eDEVICE>(retPackage.sPacketHeader.cDestination), static_cast<eDEVICE>(retPackage.sPacketHeader.cSource), eACK_TYPE_BADPACKET);
-            resetState();
-            break;
-
-        default:
-            break;
-        }
-
-        //m_parserThread->msleep(1);
     }
-}
-
-bool TransferProtocol::returnPayload(sMSG_PACKET_FORMAT *psMsg)
-{
-    bool ret = false;
-
-    if(0 != m_qMegQueue.size())
+    else
     {
-        *psMsg = m_qMegQueue.dequeue();
-        ret = true;
+        // printf("MSK_LIST_HOST, Read failed!\n");
+        psMsgData->eMsgParsingState = TransferProtocol::eMSG_STATE_TIMEOUT;
     }
 
-    return ret;
+    return psMsgData->eMsgParsingState;
 }
-
-bool TransferProtocol::commandWrite(quint8 cCmd, quint16 wSize, quint8 *pcData)
-{
-    qDebug() << "TransferProtocol commandWrite is:" << QThread::currentThreadId();
-    bool ret = false;
-    sMSG_PACKET_FORMAT sPackage;
-    sPAYLOAD sPayload;
-    sMSG_PACKET_FORMAT sRetMsg;
-
-    sPayload.cModule = 0;
-    sPayload.cSubCmd = cCmd;
-
-    if(0 != wSize)
-        memcpy(sPayload.acData, pcData, wSize);
-
-    packetBuild(&sPackage, eDEVICE_APP, eDEVICE_BOOTCODE, ePAYLOAD_TYPE_EXE_WRITE, wSeqId++, (wSize+2), &sPayload);
-
-    QByteArray PackageOut = QByteArray::fromRawData(reinterpret_cast<char *>(&sPackage), (sPackage.sPacketHeader.wPacketSize + HEADERSIZE + MAGICNUMBERSIZE));
-    writeData(PackageOut);
-
-    waitReady();
-
-    qDebug() << "ready";
-
-    if(true == returnPayload(&sRetMsg))
-    {
-        if((ePAYLOAD_TYPE_ACK == sRetMsg.sPacketHeader.cPacketType)&&(eACK_TYPE_ACK == sRetMsg.uFormat.acPayload[0]))
-        {
-            qDebug() << "Ack";
-            ret = true;
-        }
-    }
-
-    return ret;
-}
-
-bool TransferProtocol::commandRead(quint8 cCmd, quint16 wSize, quint8 *pcData)
-{
-    bool ret = false;
-    sMSG_PACKET_FORMAT sPackage;
-    sPAYLOAD sPayload;
-    //sMSG_PACKET_FORMAT sRetMsg;
-
-    sPayload.cModule = 0;
-    sPayload.cSubCmd = cCmd;
-
-    if(0 != wSize)
-        memcpy(sPayload.acData, pcData, wSize);
-
-    packetBuild(&sPackage, eDEVICE_APP, eDEVICE_BOOTCODE, ePAYLOAD_TYPE_EXE_READ, wSeqId++, (wSize+2), &sPayload);
-
-    QByteArray PackageOut = QByteArray::fromRawData(reinterpret_cast<char *>(&sPackage), (sPackage.sPacketHeader.wPacketSize + HEADERSIZE + MAGICNUMBERSIZE));
-    writeData(PackageOut);
-
-#if 0
-    while(true == m_transferProtocol->returnPayload(&sRetMsg))
-    {
-        if(TransferProtocol::ePAYLOAD_TYPE::ePAYLOAD_TYPE_REPLY == sRetMsg.sPacketHeader.cPacketType)
-        {
-            qDebug() << "Get Data";
-            ret = true;
-            break;
-        }
-    }
-#endif // 0
-    return ret;
-}
-
-void TransferProtocol::waitReady()
-{
-}
-#endif //0
