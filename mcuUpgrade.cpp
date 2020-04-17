@@ -41,20 +41,22 @@ void McuUpgrade::readFwVersion()
     int count = 0;
 
     for(count = 0; count < GET_COMPANY_SIZE; count++) {
-        int retry = 20;
+        unsigned char cReadBuffer = 0;
 
         changeBaudrate(m_strCompanyCfg.at(GET_COMPANY_BAUDRATE(count)).toInt());
         m_transferProtocol->m_serial->write_data(m_strCompanyCfg.at(GET_COMPANY_READCLI(count)).toUtf8());
 
-        if(m_transferProtocol->m_serial->m_port->waitForReadyRead(1000)) {
-            acVersion = m_transferProtocol->m_serial->m_port->readAll();
-
-            while(retry--) {
-                if(m_transferProtocol->m_serial->m_port->waitForReadyRead(10)) {
-                    acVersion.append(m_transferProtocol->m_serial->m_port->readAll());
-                }
+        while('\n' != cReadBuffer) {
+            if(m_transferProtocol->m_serial->m_port->waitForReadyRead(1000)) {
+                m_transferProtocol->m_serial->m_port->read(reinterpret_cast<char *>(&cReadBuffer), 1);
+                acVersion.append(cReadBuffer);
+            } else {
+                // Timeout break;
+                break;
             }
+        }
 
+        if('\n' == cReadBuffer) {
             break;
         }
     }
@@ -66,8 +68,7 @@ void McuUpgrade::readFwVersion()
         acVersion.insert(0, tr(m_strCompanyCfg.at(GET_COMPANY_NAME(count)).toUtf8()));
         qDebug() << "version =" << acVersion;
         showString(acVersion);
-    }
-    else {
+    } else {
         popMessage(tr("No Response!!\r\nPlease try again!!"));
     }
 }

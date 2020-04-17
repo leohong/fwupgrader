@@ -100,7 +100,7 @@ bool TransferProtocol::commandWrite(eIAP_CMD eCmd, WORD wSize, BYTE *pcData)
         writeData(PackageOut);
         resetState(&m_sMsgState);
         while(eMSG_STATE_DATA_READY > m_sMsgState.eMsgParsingState) {
-            utilHost_StateProcess(&m_sMsgState, 5000);
+            utilHost_StateProcess(&m_sMsgState, 1000);
 
             if(eMSG_STATE_DATA_READY == m_sMsgState.eMsgParsingState) {
                 if(m_wSeqId == m_sMsgState.sMsgPacket.sPacketHeader.wSeqId) {
@@ -154,7 +154,7 @@ bool TransferProtocol::commandRead(eIAP_CMD eCmd, QByteArray &data)
         resetState(&m_sMsgState);
 
         while(eMSG_STATE_DATA_READY > m_sMsgState.eMsgParsingState) {
-            utilHost_StateProcess(&m_sMsgState, 5000);
+            utilHost_StateProcess(&m_sMsgState, 1000);
 
             if(eMSG_STATE_DATA_READY == m_sMsgState.eMsgParsingState) {
                 if(m_wSeqId == m_sMsgState.sMsgPacket.sPacketHeader.wSeqId) {
