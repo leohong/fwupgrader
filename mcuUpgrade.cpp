@@ -212,6 +212,8 @@ void McuUpgrade::upgrade()
     // 1. go to bootloader
     goToBootloader(m_dwCompany);
 
+    //readBootloaderVersion();
+
     // 2. Enable In Application Programming
     if(false == setIapEnable(APP_START_ADDRESS, m_intelToBin->segmentSize())) {
         popMessage(tr("Can't enter programming mode!\r\nPlease check the connection and try again!!"));
@@ -305,4 +307,10 @@ void McuUpgrade::openConfigFile()
 
         m_strCompanyCfg << keys.at(i);
     }
+}
+
+void McuUpgrade::readBootloaderVersion() {
+    QByteArray bootloaderVersion;
+    commandRead(eIAP_CMD_APP_VER, bootloaderVersion);
+    showString(bootloaderVersion.toHex());
 }

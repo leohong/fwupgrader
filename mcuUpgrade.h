@@ -60,6 +60,7 @@ public slots:
     void loadFile(const QString &fileName);
     void upgrade();
     void readFwVersion();
+    void readBootloaderVersion();
 
 public:
     McuUpgrade(QObject *parent = nullptr);
